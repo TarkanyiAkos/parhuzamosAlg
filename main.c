@@ -14,7 +14,7 @@ void add_vectors_opencl(float* vec1, float* vec2, float* result, size_t size) {
     clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
 
     cl_context context = clCreateContext(NULL, 1, &device, NULL, NULL, &err);
-    cl_command_queue queue = clCreateCommandQueueWithProperties(context, device, 0, &err);
+    cl_command_queue queue = clCreateCommandQueue(context, device, CL_QUEUE_PROFILING_ENABLE, NULL);
 
     cl_mem buffer_vec1 = clCreateBuffer(context, CL_MEM_READ_ONLY, size * sizeof(float), NULL, &err);
     cl_mem buffer_vec2 = clCreateBuffer(context, CL_MEM_READ_ONLY, size * sizeof(float), NULL, &err);
@@ -33,20 +33,45 @@ void add_vectors_opencl(float* vec1, float* vec2, float* result, size_t size) {
 
     cl_program program = clCreateProgramWithSource(context, 1, &kernel_source, NULL, &err);
     clBuildProgram(program, 1, &device, NULL, NULL, NULL);
-
     cl_kernel kernel = clCreateKernel(program, "add_vectors", &err);
-
     clSetKernelArg(kernel, 0, sizeof(cl_mem), &buffer_vec1);
     clSetKernelArg(kernel, 1, sizeof(cl_mem), &buffer_vec2);
     clSetKernelArg(kernel, 2, sizeof(cl_mem), &buffer_result);
     clSetKernelArg(kernel, 3, sizeof(unsigned int), &size);
-
     size_t global_work_size = size;
-    clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global_work_size, NULL, 0, NULL, NULL);
+    cl_event event;
+    clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global_work_size, NULL, 0, NULL, &event);
     clFinish(queue);
 
-    clEnqueueReadBuffer(queue, buffer_result, CL_TRUE, 0, size * sizeof(float), result, 0, NULL, NULL);
+    //start
+    cl_ulong ns;
+    clGetEventProfilingInfo(
+        event,
+        CL_PROFILING_COMMAND_QUEUED,
+        sizeof(ns),
+        &ns,
+        NULL
+    );
+    //printf("Start    : %lu\n", ns);
 
+    //end
+    cl_ulong ns_end;
+    clGetEventProfilingInfo(
+        event,
+        CL_PROFILING_COMMAND_END,
+        sizeof(ns_end),
+        &ns_end,
+        NULL
+    );
+    //printf("End    : %lu\n", ns_end);
+
+
+    double secondsTaken = ((double)(ns_end - ns) / 1000000000.0);
+    printf("OpenCL time: %.10f seconds\n", secondsTaken);
+
+    
+
+    clEnqueueReadBuffer(queue, buffer_result, CL_TRUE, 0, size * sizeof(float), result, 0, NULL, NULL);
     clReleaseMemObject(buffer_vec1);
     clReleaseMemObject(buffer_vec2);
     clReleaseMemObject(buffer_result);
@@ -54,6 +79,7 @@ void add_vectors_opencl(float* vec1, float* vec2, float* result, size_t size) {
     clReleaseKernel(kernel);
     clReleaseCommandQueue(queue);
     clReleaseContext(context);
+    clReleaseEvent(event);
 }
 
 void add_vectors_sequential(float* vec1, float* vec2, float* result, size_t size) {
@@ -65,11 +91,12 @@ void add_vectors_sequential(float* vec1, float* vec2, float* result, size_t size
 int main() {
     srand(time(NULL));
 
-    size_t N = 10; //dimenziószám
+    size_t N = 50000000; //dimenziószám
     float* vec1 = (float*)malloc(N * sizeof(float));
     float* vec2 = (float*)malloc(N * sizeof(float));
     float* result_sequential = (float*)malloc(N * sizeof(float));
     float* result_opencl = (float*)malloc(N * sizeof(float));
+
     for (size_t i = 0; i < N; ++i) {
         int r = rand() % 100;
         vec1[i] = r;
@@ -78,14 +105,15 @@ int main() {
     }
 
     add_vectors_sequential(vec1, vec2, result_sequential, N);
-    printf("Sequential:\n");
-    for (size_t i = 0; i < N; ++i) {
+
+    //printf("Sequential:\n");
+    for (size_t i = 0; i < 0; ++i) { //N to log
         printf("result_sequential[%zu] = %.2f\n", i, result_sequential[i]);
     }
 
     add_vectors_opencl(vec1, vec2, result_opencl, N);
-    printf("OpenCL:\n");
-    for (size_t i = 0; i < N; ++i) {
+    //printf("OpenCL:\n");
+    for (size_t i = 0; i < 0; ++i) { //N to log
         printf("result_opencl[%zu] = %.2f\n", i, result_opencl[i]);
     }
 
