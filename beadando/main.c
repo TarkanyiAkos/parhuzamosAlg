@@ -9,6 +9,7 @@
 
 //Miller–Rabin tanúk száma
 #define NUM_WITNESSES 100000
+#define NUM_MEASUREMENTS 100
 
 //időmérő függvény
 double get_time_ms() { 
@@ -23,7 +24,7 @@ double get_time_ms() {
     return (double)now.QuadPart * 1000.0 / frequency.QuadPart; //idő konvertálása ms-ra
 }
 
-int main() {
+int runTest(int bitCount) {
     cl_int err; //OpenCL hibakód
     cl_platform_id platform_id = NULL; //OpenCL platform azonosító
     cl_uint num_platforms; //elérhető platformok száma
@@ -79,16 +80,20 @@ int main() {
 
     int n; //prím bitméret
 	
-    printf("Enter the number of bits for the prime number: ");
-    scanf("%d", &n);
-	
-    if(n < 3) {
-        printf("Warning: Miller-Rabin algorythm cannot work with less than 3 bits, even though the following primes are only 2 bits long: 2 and 3.\n");
-        return 1;
+    if (bitCount == 0) {
+        printf("Enter the number of bits for the prime number: ");
+        scanf("%d", &n);
+        if(n < 3) {
+            printf("Warning: Miller-Rabin algorythm cannot work with less than 3 bits, even though the following primes are only 2 bits long: 2 and 3.\n");
+            return 1;
+        }
+        if(n > 32) {
+            printf("ERROR! Max supported bits is 32.\n");
+            return 1;
+        }
     }
-    if(n > 32) {
-        printf("ERROR! Max supported bits is 32.\n");
-        return 1;
+    else {
+        n = bitCount;
     }
 
 	//n-bites számok határai
@@ -98,7 +103,9 @@ int main() {
     srand(time(NULL)); //véletlenszám generátor inic
 
 	//PÁRHUZAMOS
-    printf("\n--- Running OpenCL primality test ---\n");
+    if (bitCount == 0) {
+        printf("\n--- Running OpenCL primality test ---\n");
+    }
     double start = get_time_ms(); //időmérés kezdése
 
     unsigned long long candidate = lower_bound + rand() % (upper_bound - lower_bound + 1); //kezdeti prímjelölt
@@ -159,12 +166,16 @@ int main() {
 
     double end = get_time_ms(); //időmérés vége
 	
-	
-    printf("OpenCL found prime: %llu\n", candidate); //talált prím kiírása
-    printf("Time taken (OpenCL): %.3f ms\n", end - start); //idő kiírása
 
-	//SZEKVENCIÁLIS
-    printf("\n--- Running Sequential primality test ---\n");
+    if (bitCount == 0) {
+        printf("OpenCL found prime: %llu\n", candidate); //talált prím kiírása
+        printf("Time taken (OpenCL): %.3f ms\n", end - start); //idő kiírása
+
+        printf("\n--- Running Sequential primality test ---\n");
+    }
+	float parTime = end - start;
+    //SZEKVENCIÁLIS
+    
     start = get_time_ms(); //időmérés kezdete
 
     candidate = start_candidate; //eredeti jelölt
@@ -224,12 +235,83 @@ int main() {
     }
 
     end = get_time_ms();
-    printf("Sequential found prime: %llu\n", candidate);
-    printf("Time taken (Sequential): %.3f ms\n", end - start);
-
+    if (bitCount == 0) {
+        printf("Sequential found prime: %llu\n", candidate);
+        printf("Time taken (Sequential): %.3f ms\n", end - start);
+    }
+    float seqTime = end - start;
     clReleaseKernel(kernel); //OpenCL erőforrások felszabadítása
     clReleaseProgram(program);
     clReleaseCommandQueue(command_queue);
     clReleaseContext(context);
+
+    if (bitCount != 0) {
+        FILE *fp;
+        //log bitszám
+        fp=fopen("data_bitcounts.txt", "a");
+        if(fp == NULL) exit(-1); //hiba
+        fprintf(fp, "%d\n", n);
+        fclose(fp);
+
+        //log parhuzamos
+        fp=fopen("data_par.txt", "a");
+        if(fp == NULL) exit(-1); //hiba
+        fprintf(fp, "%.3f\n", parTime);
+        fclose(fp);
+        
+        //log szekvenciális
+        fp=fopen("data_seq.txt", "a");
+        if(fp == NULL) exit(-1); //hiba
+        fprintf(fp, "%.3f\n", seqTime);
+        fclose(fp);
+    }
+
     return 0;
+}
+
+int main() {
+    
+    printf("--------------------------\nPrime Number Generator\n\n1) Manual Mode\n2) Automated Mode\n3) Exit Program\n\nSelect option (1-3): ");
+    int answ = 0;
+    scanf("%d", &answ);
+    if (answ == 1) {
+        runTest(0);
+    }
+    if (answ == 3) {
+        printf("Program closed.");
+    }
+    if (answ == 2) {
+        //takaritas
+        remove("data_bitcounts.txt");
+        remove("data_par.txt");
+        remove("data_seq.txt");
+        for (int i = 0; i < 30; i++) {
+            for (int j = 0; j < NUM_MEASUREMENTS; j++) {
+                runTest(i+3);
+                printProgressBar(i * NUM_MEASUREMENTS + j, 30 * NUM_MEASUREMENTS);
+            }
+        }
+        printProgressBar(1, 1);
+    }
+    
+    return 0;
+}
+
+void printProgressBar(int progress, int total) {
+    int barWidth = 100;
+    float percentage = (float)progress / total * 100;
+
+    printf("\r[");
+    int pos = barWidth * progress / total;
+    for (int i = 0; i < barWidth; ++i) {
+        if (i < pos) {
+            printf("=");
+        } else if (i == pos) {
+            printf(">");
+        } else {
+            printf(" ");
+        }
+    }
+    printf("] %.2f%%", percentage);
+    fflush(stdout);
 }
